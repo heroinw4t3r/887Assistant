@@ -53,9 +53,61 @@ def reset_storage_backend() -> None:
     _backend = None
 
 
+def storage_status(settings) -> tuple[str, str]:
+    """Return ``(active_backend_name, human_description)`` for the active backend.
+
+    The description is safe to log: it never includes secret values, only the
+    non-sensitive endpoint/bucket/region/path-style (for s3) or the path (local).
+    """
+    backend = get_storage_backend(settings)
+    if backend.name == "s3":
+        endpoint = settings.s3_endpoint_url or "(AWS default endpoint)"
+        description = (
+            f"S3-compatible object storage: endpoint={endpoint} "
+            f"bucket={settings.s3_bucket!r} region={settings.s3_region} "
+            f"path_style={settings.s3_force_path_style}"
+        )
+    else:
+        description = f"local filesystem: path={settings.file_storage_path!r}"
+    return backend.name, description
+
+
+async def check_storage(settings, logger) -> None:
+    """Log the active storage backend and verify connectivity (never crashes startup)."""
+    backend = get_storage_backend(settings)
+    name, description = storage_status(settings)
+
+    if settings.storage_backend == "s3" and name != "s3":
+        missing = [
+            field
+            for field, value in (
+                ("s3_bucket", settings.s3_bucket),
+                ("s3_access_key_id", settings.s3_access_key_id),
+                ("s3_secret_access_key", settings.s3_secret_access_key),
+            )
+            if not value
+        ]
+        logger.warning(
+            "STORAGE_BACKEND=s3 was requested but required S3 settings are missing "
+            "(%s); falling back to local storage. Storj/S3 is NOT being used.",
+            ", ".join(missing) or "unknown",
+        )
+
+    logger.info("Active storage backend: '%s' — %s", name, description)
+
+    try:
+        await backend.healthcheck()
+    except StorageError as exc:
+        logger.error("Storage backend '%s' connection FAILED: %s", name, exc)
+    else:
+        logger.info("Storage backend '%s' connection OK", name)
+
+
 __all__ = [
     "StorageBackend",
     "StorageError",
     "get_storage_backend",
     "reset_storage_backend",
+    "storage_status",
+    "check_storage",
 ]

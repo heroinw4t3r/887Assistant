@@ -1,13 +1,17 @@
 """Unit tests for the pluggable storage backends (no network)."""
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from app.storage import (
     StorageBackend,
     StorageError,
+    check_storage,
     get_storage_backend,
     reset_storage_backend,
+    storage_status,
 )
 from app.storage.local import LocalStorageBackend
 from app.storage.s3 import S3StorageBackend
@@ -224,3 +228,94 @@ async def test_s3_wraps_errors(monkeypatch):
     fake.get_object = _boom
     with pytest.raises(StorageError):
         await backend.load("missing")
+
+
+# --------------------------------------------------------------------------- #
+# Healthchecks
+# --------------------------------------------------------------------------- #
+async def test_local_healthcheck_ok_for_writable_dir(tmp_path):
+    backend = LocalStorageBackend(str(tmp_path / "nested"))
+    await backend.healthcheck()
+    assert (tmp_path / "nested").is_dir()
+    # The probe file must be cleaned up.
+    assert not (tmp_path / "nested" / ".healthcheck").exists()
+
+
+async def test_s3_healthcheck_calls_head_bucket(monkeypatch):
+    backend, fake = _make_s3(monkeypatch)
+    calls: list[dict] = []
+    fake.head_bucket = lambda **kwargs: calls.append(kwargs) or {}
+
+    await backend.healthcheck()
+    assert calls == [{"Bucket": "my-bucket"}]
+
+
+async def test_s3_healthcheck_maps_botocore_error(monkeypatch):
+    from botocore.exceptions import ClientError
+
+    backend, fake = _make_s3(monkeypatch)
+
+    def _boom(**kwargs):
+        raise ClientError({"Error": {"Code": "403", "Message": "denied"}}, "HeadBucket")
+
+    fake.head_bucket = _boom
+    with pytest.raises(StorageError) as excinfo:
+        await backend.healthcheck()
+    assert "my-bucket" in str(excinfo.value)
+
+
+# --------------------------------------------------------------------------- #
+# storage_status
+# --------------------------------------------------------------------------- #
+def test_storage_status_s3(monkeypatch):
+    fake = _FakeS3Client()
+    monkeypatch.setattr("boto3.client", lambda *a, **k: fake)
+    settings = _FakeSettings(
+        storage_backend="s3",
+        s3_bucket="my-bucket",
+        s3_access_key_id="key",
+        s3_secret_access_key="secret",
+        s3_endpoint_url="https://gateway.storjshare.io",
+    )
+    name, description = storage_status(settings)
+    assert name == "s3"
+    assert "my-bucket" in description
+    assert "gateway.storjshare.io" in description
+
+
+def test_storage_status_local(tmp_path):
+    settings = _FakeSettings(storage_backend="local", file_storage_path=str(tmp_path))
+    name, description = storage_status(settings)
+    assert name == "local"
+    assert str(tmp_path) in description
+
+
+# --------------------------------------------------------------------------- #
+# check_storage
+# --------------------------------------------------------------------------- #
+async def test_check_storage_warns_on_fallback(tmp_path, caplog):
+    settings = _FakeSettings(
+        storage_backend="s3",
+        file_storage_path=str(tmp_path),
+        s3_bucket="",
+        s3_access_key_id="key",
+        s3_secret_access_key="secret",
+    )
+    logger = logging.getLogger("test.check_storage")
+    with caplog.at_level(logging.WARNING):
+        await check_storage(settings, logger)
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("s3_bucket" in msg for msg in warnings)
+    assert any("falling back to local storage" in msg for msg in warnings)
+
+
+async def test_check_storage_logs_ok_for_local(tmp_path, caplog):
+    settings = _FakeSettings(storage_backend="local", file_storage_path=str(tmp_path))
+    logger = logging.getLogger("test.check_storage")
+    with caplog.at_level(logging.INFO):
+        await check_storage(settings, logger)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("connection OK" in msg for msg in messages)
+    assert not any(r.levelno == logging.WARNING for r in caplog.records)

@@ -35,3 +35,7 @@ class StorageBackend(Protocol):
     def public_url(self, key: str) -> str | None:
         """Return a publicly reachable URL for ``key`` if configured, else ``None``."""
         ...
+
+    async def healthcheck(self) -> None:
+        """Verify the backend is reachable/usable; raise StorageError on failure."""
+        ...

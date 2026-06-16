@@ -23,6 +23,7 @@ from app.modules.calendar import handlers as calendar_handlers
 from app.modules.calendar import reminders as calendar_reminders
 from app.modules.faceit import handlers as faceit_handlers
 from app.modules.files import handlers as files_handlers
+from app.storage import check_storage
 from app.web.server import start_web_server
 
 logger = logging.getLogger("main")
@@ -63,6 +64,8 @@ async def main() -> None:
         raise SystemExit("TELEGRAM_BOT_TOKEN is not set. Copy .env.example to .env and fill it in.")
 
     await init_db()
+
+    await check_storage(settings, logger)
 
     bot = Bot(
         token=settings.telegram_bot_token,
