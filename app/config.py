@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     s3_bucket: str = Field(default="", alias="S3_BUCKET")
     s3_region: str = Field(default="auto", alias="S3_REGION")  # Cloudflare R2 uses "auto"
     s3_public_base_url: str = Field(default="", alias="S3_PUBLIC_BASE_URL")
+    # Some gateways (e.g. Storj) need path-style addressing instead of virtual-hosted.
+    s3_force_path_style: bool = Field(default=False, alias="S3_FORCE_PATH_STYLE")
 
     # Calendar / web server
     base_url: str = Field(default="http://localhost:8080", alias="BASE_URL")
