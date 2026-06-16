@@ -34,7 +34,9 @@ def _migrate_sqlite_schema(connection) -> None:
 
 _settings = get_settings()
 
-engine = create_async_engine(_settings.database_url, echo=False, future=True)
+engine = create_async_engine(
+    _settings.sqlalchemy_url, echo=False, future=True, pool_pre_ping=True
+)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
@@ -50,8 +52,8 @@ async def init_db() -> None:
 
     if _settings.is_sqlite:
         # Ensure the directory for the sqlite file exists.
-        # database_url looks like sqlite+aiosqlite:///./data/887assistant.db
-        path = _settings.database_url.split(":///", 1)[-1]
+        # sqlalchemy_url looks like sqlite+aiosqlite:///./data/887assistant.db
+        path = _settings.sqlalchemy_url.split(":///", 1)[-1]
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
