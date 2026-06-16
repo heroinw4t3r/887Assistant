@@ -1,0 +1,26 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+    restart: unless-stopped
+
+  # Optional PostgreSQL. To use it, set in .env:
+  #   DATABASE_URL=postgresql+asyncpg://887:887@db:5432/887assistant
+  # and uncomment "depends_on" above plus this service.
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: "887"
+  #     POSTGRES_PASSWORD: "887"
+  #     POSTGRES_DB: "887assistant"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
+# volumes:
+#   pgdata:
