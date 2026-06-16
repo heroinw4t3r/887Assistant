@@ -69,7 +69,12 @@ def _wrap_bot_method(original: Callable[..., Any], method_name: str) -> Callable
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         result = await original(*args, **kwargs)
         if isinstance(result, Message) and result.chat.id > 0:
-            await track_bot_message(result.chat.id, result.chat.id, result.message_id)
+            try:
+                # In private chats chat_id == user_id, so chat.id is the owner_id.
+                # The chat.id > 0 guard skips groups/channels (negative ids).
+                await track_bot_message(result.chat.id, result.chat.id, result.message_id)
+            except Exception:  # noqa: BLE001 - tracking is best-effort, never break sending
+                logger.debug("Failed to track bot message for %s", method_name)
         return result
 
     wrapper.__name__ = f"tracked_{method_name}"
@@ -78,6 +83,12 @@ def _wrap_bot_method(original: Callable[..., Any], method_name: str) -> Callable
 
 def patch_bot_for_message_tracking(bot: Bot) -> None:
     """Wrap common ``Bot.send_*`` methods to persist message ids for cleanup."""
+    if getattr(bot, "_message_tracking_patched", False):
+        return
     for method_name in _TRACKED_METHODS:
-        original = getattr(Bot, method_name)
+        # Use the BOUND instance method so ``self`` is preserved; wrapping the
+        # unbound ``Bot`` method and assigning it to the instance would drop self
+        # and shift positional args (chat_id would be consumed as self).
+        original = getattr(bot, method_name)
         setattr(bot, method_name, _wrap_bot_method(original, method_name))
+    bot._message_tracking_patched = True
