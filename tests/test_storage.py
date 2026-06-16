@@ -159,6 +159,7 @@ async def test_s3_save_load_delete(monkeypatch):
     assert fake.put_calls[0]["Bucket"] == "my-bucket"
     assert fake.put_calls[0]["Key"] == key
     assert fake.put_calls[0]["Body"] == payload
+    assert fake.put_calls[0]["ContentLength"] == len(payload)
     assert fake.put_calls[0]["ContentType"] == "text/plain"
 
     loaded = await backend.load(key)
@@ -173,6 +174,7 @@ async def test_s3_save_load_delete(monkeypatch):
 async def test_s3_save_without_content_type_omits_it(monkeypatch):
     backend, fake = _make_s3(monkeypatch)
     await backend.save("k", b"x")
+    assert fake.put_calls[0]["ContentLength"] == 1
     assert "ContentType" not in fake.put_calls[0]
 
 

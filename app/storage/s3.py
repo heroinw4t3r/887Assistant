@@ -54,6 +54,8 @@ class S3StorageBackend:
             "Bucket": self._bucket,
             "Key": key,
             "Body": data,
+            # Storj and some S3-compatible gateways require Content-Length explicitly.
+            "ContentLength": len(data),
         }
         if content_type:
             kwargs["ContentType"] = content_type
