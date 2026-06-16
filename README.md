@@ -46,9 +46,12 @@ docker compose up --build
 | Переменная | Назначение |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | токен бота от [@BotFather](https://t.me/BotFather) |
-| `DATABASE_URL` | SQLite (по умолчанию) или PostgreSQL (`postgresql+asyncpg://…`) |
-| `FILE_STORAGE_PATH` | каталог для хранения файлов |
+| `DATABASE_URL` | SQLite (по умолчанию) или PostgreSQL. Railway отдаёт `postgresql://…` — приложение само нормализует его в `postgresql+asyncpg://…` |
+| `STORAGE_BACKEND` | `local` (по умолчанию) или `s3` — куда складывать файлы |
+| `S3_ENDPOINT_URL` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` / `S3_BUCKET` / `S3_REGION` | параметры объектного хранилища (Cloudflare R2 / S3) |
+| `FILE_STORAGE_PATH` | каталог для файлов при `STORAGE_BACKEND=local` |
 | `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` | провайдер и ключ ИИ-чата |
+| `WEB_SEARCH_PROVIDER` / `TAVILY_API_KEY` | веб-поиск для ИИ (по умолчанию `tavily`) |
 | `FACEIT_API_KEY` | ключ FACEIT Data API ([developers.faceit.com](https://developers.faceit.com)) |
 | `BASE_URL` | публичный URL для подписки на календарь (`.ics`/`webcal`) |
 
@@ -58,6 +61,27 @@ docker compose up --build
 - **FACEIT:** [developers.faceit.com](https://developers.faceit.com) → App Studio → API Keys → **Server side**.
 - **Kimi / Moonshot:** платформа Moonshot AI → API keys (`https://api.moonshot.ai/v1`).
 - **Бесплатные альтернативы ИИ:** Google Gemini (AI Studio), Groq, OpenRouter (free-модели).
+- **Веб-поиск (Tavily):** [tavily.com](https://tavily.com) → API key (бесплатный тариф). DuckDuckGo на хостинге ненадёжен (таймауты с дата-центровых IP), поэтому по умолчанию используется Tavily.
+- **Cloudflare R2:** dash.cloudflare.com → R2 → создать bucket и API-токен (S3-совместимый, 10 ГБ бесплатно).
+
+## Развёртывание на Railway (Postgres + Cloudflare R2)
+
+Файловая система контейнера Railway **эфемерная** — поэтому БД и файлы нужно держать снаружи, иначе они стираются при каждом деплое.
+
+1. **БД — Railway Postgres:** добавьте плагин Postgres; Railway пробросит `DATABASE_URL=postgresql://…` (нормализуется автоматически).
+2. **Файлы — Cloudflare R2 (10 ГБ бесплатно):** задайте переменные:
+   ```bash
+   STORAGE_BACKEND=s3
+   S3_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com
+   S3_ACCESS_KEY_ID=<r2-access-key-id>
+   S3_SECRET_ACCESS_KEY=<r2-secret-access-key>
+   S3_BUCKET=<bucket>
+   S3_REGION=auto
+   ```
+3. **Веб-поиск ИИ:** `WEB_SEARCH_PROVIDER=tavily` + `TAVILY_API_KEY=...`.
+4. **Веб-сервер:** `WEB_PORT=${{PORT}}`, `WEB_HOST=0.0.0.0`, `BASE_URL=https://<домен>.up.railway.app`.
+
+> Volume на тарифе Hobby ограничен 5 ГБ, поэтому для «10 ГБ» под файлы используется именно объектное хранилище (R2). Маленький Postgres под метаданные с запасом укладывается в лимиты.
 
 ## Тесты и линт
 
