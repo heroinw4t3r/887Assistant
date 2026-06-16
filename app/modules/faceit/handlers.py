@@ -28,6 +28,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.bot.callbacks import MENU_FACEIT, MENU_HOME
 from app.bot.keyboards import back_home_kb
 from app.config import get_settings
+from app.db.base import session_scope
 from app.modules.faceit.charset import count_digit, count_letter
 from app.modules.faceit.client import FaceitClient
 from app.modules.faceit.service import (
@@ -167,7 +168,8 @@ async def receive_nicknames(message: Message, state: FSMContext) -> None:
         cache_ttl=settings.faceit_cache_ttl,
     )
     try:
-        results = await check_many(client, nicknames)
+        async with session_scope() as session:
+            results = await check_many(client, nicknames, session=session)
     finally:
         await client.aclose()
 
@@ -260,13 +262,15 @@ async def _scan_task(message: Message, user_id: int, kind: str) -> None:
         return _stop_flags.get(user_id, False)
 
     try:
-        results = await bulk_scan(
-            client,
-            kind,
-            on_progress=on_progress,
-            should_stop=should_stop,
-            length=3,
-        )
+        async with session_scope() as session:
+            results = await bulk_scan(
+                client,
+                kind,
+                on_progress=on_progress,
+                should_stop=should_stop,
+                length=3,
+                session=session,
+            )
         stopped = should_stop()
         done = len(results)
         head = (

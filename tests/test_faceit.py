@@ -1,17 +1,27 @@
 """Tests for the FACEIT nickname-checker module (no real network)."""
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.db.base import Base
+from app.db.models import FaceitNickCache
+from app.modules.faceit.cache import get_cached, put_cached
 from app.modules.faceit.charset import (
     count_digit,
     count_letter,
     iter_digit_nicknames,
     iter_letter_nicknames,
 )
-from app.modules.faceit.client import FaceitClient, NickStatus
-from app.modules.faceit.service import format_check_results, format_free_list
+from app.modules.faceit.client import FaceitClient, NickResult, NickStatus
+from app.modules.faceit.service import (
+    check_many,
+    format_check_results,
+    format_free_list,
+)
 
 
 # --- charset -----------------------------------------------------------------
@@ -179,3 +189,112 @@ def test_format_check_results_labels():
 
 def test_format_check_results_empty():
     assert "Не переданы" in format_check_results([])
+
+
+# --- L2 (DB-backed) cache ----------------------------------------------------
+@pytest.fixture
+async def db_session():
+    """Isolated in-memory SQLite session with all tables created."""
+    engine = create_async_engine("sqlite+aiosqlite://")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessionmaker() as session:
+        yield session
+    await engine.dispose()
+
+
+async def test_cache_round_trip(db_session):
+    await put_cached(db_session, NickResult("aaa", NickStatus.FREE))
+    await put_cached(
+        db_session, NickResult("bbb", NickStatus.TAKEN, player_id="pid-1")
+    )
+
+    free = await get_cached(db_session, "aaa", ttl=600)
+    assert free is not None
+    assert free.status is NickStatus.FREE
+    assert free.player_id is None
+
+    taken = await get_cached(db_session, "bbb", ttl=600)
+    assert taken is not None
+    assert taken.status is NickStatus.TAKEN
+    assert taken.player_id == "pid-1"
+
+    # Missing nickname -> None.
+    assert await get_cached(db_session, "zzz", ttl=600) is None
+
+
+async def test_cache_stale_returns_none(db_session):
+    db_session.add(
+        FaceitNickCache(
+            nickname="old",
+            status=NickStatus.FREE.value,
+            player_id=None,
+            checked_at=datetime.now(UTC) - timedelta(seconds=1000),
+        )
+    )
+    await db_session.flush()
+
+    assert await get_cached(db_session, "old", ttl=600) is None
+    # Within a wider TTL it is still considered fresh.
+    assert await get_cached(db_session, "old", ttl=5000) is not None
+
+
+async def test_cache_naive_datetime_treated_as_utc(db_session):
+    # Simulate a SQLite naive timestamp that is recent.
+    db_session.add(
+        FaceitNickCache(
+            nickname="naive",
+            status=NickStatus.FREE.value,
+            player_id=None,
+            checked_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+    )
+    await db_session.flush()
+
+    result = await get_cached(db_session, "naive", ttl=600)
+    assert result is not None
+    assert result.status is NickStatus.FREE
+
+
+async def test_error_results_not_cached(db_session):
+    await put_cached(db_session, NickResult("oops", NickStatus.ERROR, detail="boom"))
+    await db_session.flush()
+
+    assert await get_cached(db_session, "oops", ttl=600) is None
+    assert await db_session.get(FaceitNickCache, "oops") is None
+
+
+class _ExplodingClient:
+    """Stand-in client whose .check must never be called for cached nicks."""
+
+    async def check(self, nickname):  # noqa: D401, ANN001
+        raise AssertionError(f"network call made for cached nick {nickname!r}")
+
+
+async def test_check_many_uses_cache(db_session):
+    await put_cached(db_session, NickResult("cachedfree", NickStatus.FREE))
+    await db_session.flush()
+
+    results = await check_many(_ExplodingClient(), ["cachedfree"], session=db_session)
+
+    assert len(results) == 1
+    assert results[0].status is NickStatus.FREE
+    assert results[0].nickname == "cachedfree"
+
+
+async def test_check_many_miss_populates_cache(db_session):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    client = _make_client(handler)
+    try:
+        results = await check_many(client, ["freshnick"], session=db_session)
+    finally:
+        await client.aclose()
+
+    assert results[0].status is NickStatus.FREE
+    # Verdict was written through to the DB cache.
+    cached = await get_cached(db_session, "freshnick", ttl=600)
+    assert cached is not None
+    assert cached.status is NickStatus.FREE
