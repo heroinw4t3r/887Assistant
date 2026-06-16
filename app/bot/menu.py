@@ -4,7 +4,7 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import MENU_CLEAR, MENU_HOME
 from app.bot.keyboards import main_menu_kb
@@ -15,12 +15,12 @@ from app.db.repository import get_or_create_user
 router = Router(name="menu")
 
 WELCOME = (
-    "👋 <b>887Assistant</b>\n\n"
+    "<b>887Assistant</b>\n\n"
     "Я умею:\n"
-    "📁 <b>Файлы</b> — загрузка и хранение ваших файлов\n"
-    "📅 <b>Календарь</b> — события и синхронизация с телефоном\n"
-    "🤖 <b>ИИ-чат</b> — общение с нейросетью (OpenRouter / Llama и др.)\n"
-    "🎮 <b>FACEIT ники</b> — проверка доступности никнеймов\n\n"
+    "<b>Файлы</b> — загрузка и хранение ваших файлов\n"
+    "<b>Календарь</b> — события и синхронизация с телефоном\n"
+    "<b>ИИ-чат</b> — общение с нейросетью (OpenRouter / Llama и др.)\n"
+    "<b>FACEIT</b> — проверка доступности никнеймов\n\n"
     "Выберите раздел:"
 )
 
@@ -48,7 +48,6 @@ async def cmd_menu(message: Message, state: FSMContext) -> None:
 async def open_home(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("Главное меню:", reply_markup=main_menu_kb())
-    await callback.message.answer("⌨️", reply_markup=ReplyKeyboardRemove())
     await callback.answer()
 
 
@@ -59,9 +58,8 @@ async def clear_chat(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await state.clear()
     await callback.message.answer(
-        f"🧹 Удалено сообщений бота: <b>{deleted}</b>.\n"
-        "Контекст ИИ-чата сохранён — диалог с нейросетью не сброшен.",
-        reply_markup=ReplyKeyboardRemove(),
+        f"Удалено сообщений бота: <b>{deleted}</b>.\n"
+        "Контекст ИИ-чата сохранён — диалог с нейросетью не сброшен."
     )
     await callback.message.answer("Главное меню:", reply_markup=main_menu_kb())
     await callback.answer("Чат очищен")

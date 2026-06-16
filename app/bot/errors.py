@@ -19,11 +19,11 @@ async def on_error(event: ErrorEvent) -> bool:
     try:
         if update.message:
             await update.message.answer(
-                "⚠️ Произошла ошибка. Попробуйте ещё раз или вернитесь в /menu."
+                "Произошла ошибка. Попробуйте ещё раз или вернитесь в /menu."
             )
         elif update.callback_query:
             await update.callback_query.answer(
-                "⚠️ Произошла ошибка, попробуйте ещё раз.", show_alert=True
+                "Произошла ошибка, попробуйте ещё раз.", show_alert=True
             )
     except Exception:  # noqa: BLE001 - never let the error handler itself raise
         logger.debug("Failed to notify user about the error", exc_info=True)

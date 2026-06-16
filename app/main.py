@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.bot import errors as errors_router
@@ -25,6 +26,21 @@ from app.modules.files import handlers as files_handlers
 from app.web.server import start_web_server
 
 logger = logging.getLogger("main")
+
+
+BOT_COMMANDS = [
+    BotCommand(command="start", description="Запуск и главное меню"),
+    BotCommand(command="menu", description="Главное меню"),
+    BotCommand(command="help", description="Справка"),
+]
+
+
+async def _set_bot_commands(bot: Bot) -> None:
+    """Register the blue 'Menu' command list; never crash startup on failure."""
+    try:
+        await bot.set_my_commands(BOT_COMMANDS)
+    except Exception:  # noqa: BLE001 - command menu is best-effort
+        logger.warning("Failed to set bot commands", exc_info=True)
 
 
 def build_dispatcher() -> Dispatcher:
@@ -54,6 +70,8 @@ async def main() -> None:
     )
     patch_bot_for_message_tracking(bot)
     runtime.set_bot(bot)
+
+    await _set_bot_commands(bot)
 
     scheduler = AsyncIOScheduler(timezone="UTC")
     runtime.set_scheduler(scheduler)

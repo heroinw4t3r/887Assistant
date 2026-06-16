@@ -81,11 +81,11 @@ async def _set_current_folder(state: FSMContext, folder_id: int | None) -> None:
 
 def _files_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="📥 Мои файлы", callback_data="files:list:0")
-    builder.button(text="📂 Создать папку", callback_data="files:mkdir")
-    builder.button(text="💾 Место", callback_data="files:storage")
-    builder.button(text="🔎 Поиск", callback_data="files:search")
-    builder.button(text="⬅️ В меню", callback_data=MENU_HOME)
+    builder.button(text="Мои файлы", callback_data="files:list:0")
+    builder.button(text="Создать папку", callback_data="files:mkdir")
+    builder.button(text="Место", callback_data="files:storage")
+    builder.button(text="Поиск", callback_data="files:search")
+    builder.button(text="В меню", callback_data=MENU_HOME)
     builder.adjust(2, 2, 1)
     return builder.as_markup()
 
@@ -104,12 +104,12 @@ def _list_markup(
 
     if query is None and folder_id is not None:
         up_data = f"files:open:{parent_id}" if parent_id is not None else "files:open:root"
-        builder.button(text="⬆️ Вверх", callback_data=up_data)
+        builder.button(text="Вверх", callback_data=up_data)
         builder.adjust(1)
 
     for folder in folders:
         builder.button(
-            text=f"📂 {_truncate(folder.name)}",
+            text=_truncate(folder.name),
             callback_data=f"files:open:{folder.id}",
         )
     builder.adjust(1)
@@ -126,7 +126,7 @@ def _list_markup(
         prev_offset = max(0, offset - PAGE_SIZE)
         nav.append(
             InlineKeyboardButton(
-                text="⬅️ Назад",
+                text="Назад",
                 callback_data=f"files:list:{prev_offset}",
             )
         )
@@ -134,7 +134,7 @@ def _list_markup(
         next_offset = offset + PAGE_SIZE
         nav.append(
             InlineKeyboardButton(
-                text="Вперёд ➡️",
+                text="Вперёд",
                 callback_data=f"files:list:{next_offset}",
             )
         )
@@ -142,20 +142,20 @@ def _list_markup(
         builder.row(*nav)
 
     builder.row(
-        InlineKeyboardButton(text="📁 Файлы", callback_data=MENU_FILES),
-        InlineKeyboardButton(text="⬅️ В меню", callback_data=MENU_HOME),
+        InlineKeyboardButton(text="Файлы", callback_data=MENU_FILES),
+        InlineKeyboardButton(text="В меню", callback_data=MENU_HOME),
     )
     return builder.as_markup()
 
 
 def _detail_markup(file_id: int, folder_id: int | None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="⬇️ Скачать", callback_data=f"files:get:{file_id}")
-    builder.button(text="✏️ Переименовать", callback_data=f"files:ren:{file_id}")
-    builder.button(text="🗑 Удалить", callback_data=f"files:del:{file_id}")
+    builder.button(text="Скачать", callback_data=f"files:get:{file_id}")
+    builder.button(text="Переименовать", callback_data=f"files:ren:{file_id}")
+    builder.button(text="Удалить", callback_data=f"files:del:{file_id}")
     back_data = "files:list:0" if folder_id is None else f"files:open:{folder_id}"
-    builder.button(text="📥 К списку", callback_data=back_data)
-    builder.button(text="⬅️ В меню", callback_data=MENU_HOME)
+    builder.button(text="К списку", callback_data=back_data)
+    builder.button(text="В меню", callback_data=MENU_HOME)
     builder.adjust(2, 1, 2)
     return builder.as_markup()
 
@@ -168,21 +168,21 @@ def _list_text(
     query: str | None = None,
     folder_count: int = 0,
 ) -> str:
-    location = f"📂 <b>{html.escape(folder_name)}</b>" if folder_name else "📁 <b>Корень</b>"
+    location = f"<b>{html.escape(folder_name)}</b>" if folder_name else "<b>Корень</b>"
     if total == 0 and folder_count == 0:
         if query:
             return (
-                f"🔎 По запросу <b>{html.escape(query)}</b> ничего не найдено.\n"
+                f"По запросу <b>{html.escape(query)}</b> ничего не найдено.\n"
                 "Отправьте файл боту, чтобы сохранить его."
             )
         return (
-            f"{location}\n\n📭 Здесь пока пусто.\n"
+            f"{location}\n\nЗдесь пока пусто.\n"
             "Отправьте файл боту или создайте папку."
         )
     page_from = offset + 1 if total else 0
     page_to = min(offset + PAGE_SIZE, total) if total else 0
     if query:
-        header = f"🔎 Результаты поиска по «{html.escape(query)}»"
+        header = f"Результаты поиска по «{html.escape(query)}»"
     else:
         header = location
     parts = [header]
@@ -204,7 +204,7 @@ def _detail_text(stored: StoredFile) -> str:
     else:
         location = "по ссылке Telegram"
     return (
-        f"📄 <b>{html.escape(stored.file_name)}</b>\n"
+        f"<b>{html.escape(stored.file_name)}</b>\n"
         f"Размер: {_human_size(stored.size)}\n"
         f"Тип: {mime}\n"
         f"Категория: {html.escape(stored.kind)}\n"
@@ -215,7 +215,7 @@ def _detail_text(stored: StoredFile) -> str:
 
 def _storage_text(used: int, file_count: int, folder_count: int, quota: int | None) -> str:
     lines = [
-        "💾 <b>Хранилище</b>",
+        "<b>Хранилище</b>",
         f"Файлов: {file_count}",
         f"Папок: {folder_count}",
         f"Занято: {_human_size(used)}",
@@ -351,7 +351,7 @@ async def open_files(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await _set_current_folder(state, None)
     await callback.message.edit_text(
-        "📁 <b>Файлы</b>\n\n"
+        "<b>Файлы</b>\n\n"
         "Отправьте боту любой файл — и он сохранит его в текущую папку.\n"
         "Создавайте папки, смотрите список и остаток места.",
         reply_markup=_files_menu_kb(),
@@ -373,7 +373,7 @@ async def store_incoming_file(message: Message, bot: Bot, state: FSMContext) -> 
         used, _, _, quota = await service.get_storage_stats(session, message.from_user.id)
         if quota is not None and used + size > quota:
             await message.answer(
-                "⚠️ Недостаточно места в хранилище.\n"
+                "Недостаточно места в хранилище.\n"
                 f"Занято: {_human_size(used)} из {_human_size(quota)}."
             )
             return
@@ -408,20 +408,20 @@ async def store_incoming_file(message: Message, bot: Bot, state: FSMContext) -> 
         file_id = stored.id
 
     text = (
-        f"✅ Файл сохранён: <b>{html.escape(file_name)}</b>\n"
+        f"Файл сохранён: <b>{html.escape(file_name)}</b>\n"
         f"Размер: {_human_size(size)}"
     )
     if folder_id is not None:
-        text += "\n📂 Сохранён в текущую папку."
+        text += "\nСохранён в текущую папку."
     if not downloaded:
         text += (
-            "\n\nℹ️ Файл хранится по ссылке Telegram (его можно переслать заново), "
+            "\n\nФайл хранится по ссылке Telegram (его можно переслать заново), "
             "но не скачан на сервер."
         )
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="📄 Открыть", callback_data=f"files:view:{file_id}")
-    builder.button(text="📥 Мои файлы", callback_data="files:list:0")
+    builder.button(text="Открыть", callback_data=f"files:view:{file_id}")
+    builder.button(text="Мои файлы", callback_data="files:list:0")
     builder.adjust(2)
     await message.answer(text, reply_markup=builder.as_markup())
 
@@ -459,8 +459,8 @@ async def storage_view(callback: CallbackQuery) -> None:
             session, callback.from_user.id
         )
     builder = InlineKeyboardBuilder()
-    builder.button(text="📁 Файлы", callback_data=MENU_FILES)
-    builder.button(text="⬅️ В меню", callback_data=MENU_HOME)
+    builder.button(text="Файлы", callback_data=MENU_FILES)
+    builder.button(text="В меню", callback_data=MENU_HOME)
     builder.adjust(2)
     await callback.message.edit_text(
         _storage_text(used, file_count, folder_count, quota),
@@ -473,7 +473,7 @@ async def storage_view(callback: CallbackQuery) -> None:
 async def mkdir_prompt(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(FilesStates.creating_folder)
     await callback.message.edit_text(
-        "📂 Введите имя новой папки.",
+        "Введите имя новой папки.",
         reply_markup=back_home_kb(),
     )
     await callback.answer()
@@ -497,11 +497,11 @@ async def mkdir_apply(message: Message, state: FSMContext) -> None:
 
     await _set_current_folder(state, folder_id)
     builder = InlineKeyboardBuilder()
-    builder.button(text="📥 Открыть папку", callback_data=f"files:open:{folder_id}")
-    builder.button(text="📁 Файлы", callback_data=MENU_FILES)
+    builder.button(text="Открыть папку", callback_data=f"files:open:{folder_id}")
+    builder.button(text="Файлы", callback_data=MENU_FILES)
     builder.adjust(1)
     await message.answer(
-        f"✅ Папка <b>{html.escape(folder.name)}</b> создана.",
+        f"Папка <b>{html.escape(folder.name)}</b> создана.",
         reply_markup=builder.as_markup(),
     )
 
@@ -571,7 +571,7 @@ async def rename_prompt(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(rename_id=file_id)
     await state.set_state(FilesStates.renaming)
     await callback.message.edit_text(
-        f"✏️ Текущее имя: <b>{html.escape(current)}</b>\n\nОтправьте новое имя файла.",
+        f"Текущее имя: <b>{html.escape(current)}</b>\n\nОтправьте новое имя файла.",
         reply_markup=back_home_kb(),
     )
     await callback.answer()
@@ -598,7 +598,7 @@ async def rename_apply(message: Message, state: FSMContext) -> None:
         text = _detail_text(stored)
 
     await message.answer(
-        "✅ Файл переименован.\n\n" + text,
+        "Файл переименован.\n\n" + text,
         reply_markup=_detail_markup(file_id, stored.folder_id or folder_id),
     )
 
@@ -607,7 +607,7 @@ async def rename_apply(message: Message, state: FSMContext) -> None:
 async def search_prompt(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(FilesStates.searching)
     await callback.message.edit_text(
-        "🔎 Введите часть имени файла для поиска.",
+        "Введите часть имени файла для поиска.",
         reply_markup=back_home_kb(),
     )
     await callback.answer()

@@ -37,10 +37,10 @@ def _format_reminder(event, tz: ZoneInfo) -> str:
     local_start = ensure_utc(event.start_at).astimezone(tz)
     when = "весь день" if event.all_day else local_start.strftime("%H:%M")
     lines = [
-        "🔔 <b>Напоминание о событии</b>",
+        "<b>Напоминание о событии</b>",
         "",
         f"<b>{escape(event.title)}</b>",
-        f"🕒 {local_start.strftime('%d.%m.%Y')} · {when}",
+        f"{local_start.strftime('%d.%m.%Y')} · {when}",
     ]
     if event.description:
         lines.append("")

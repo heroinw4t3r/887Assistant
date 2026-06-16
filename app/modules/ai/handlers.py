@@ -8,10 +8,10 @@ from aiogram import F, Router
 from aiogram.enums import ChatAction
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import MENU_AI
-from app.bot.keyboards import ai_chat_kb, main_menu_kb
+from app.bot.keyboards import AI_RESET, AI_WEB, ai_chat_kb
 from app.config import get_settings
 from app.db.base import session_scope
 from app.modules.ai import service
@@ -21,11 +21,6 @@ logger = logging.getLogger("ai")
 
 router = Router(name="ai")
 
-AI_RESET = "ai:reset"
-AI_RESET_TEXT = "🧹 Сбросить диалог"
-AI_MENU_TEXT = "⬅️ В меню"
-AI_WEB_ON_TEXT = "🌐 Интернет: вкл"
-AI_WEB_OFF_TEXT = "🌐 Интернет: выкл"
 FSM_WEB_ENABLED = "ai_web_enabled"
 
 _MAX_MESSAGE_LEN = 4096
@@ -64,33 +59,33 @@ def _info_text(settings, *, web_enabled: bool) -> str:
     masked_key = html.escape(_mask_key(settings.llm_api_key))
 
     if not settings.web_search_enabled:
-        web_line = "🌐 <b>Интернет:</b> отключён в настройках сервера."
+        web_line = "<b>Интернет:</b> отключён в настройках сервера."
     elif web_enabled:
         provider_name_search = html.escape(settings.web_search_provider)
         web_line = (
-            f"🌐 <b>Интернет:</b> включён (поиск через {provider_name_search}). "
+            f"<b>Интернет:</b> включён (поиск через {provider_name_search}). "
             "Актуальные данные подтягиваются перед ответом."
         )
     else:
         web_line = (
-            "🌐 <b>Интернет:</b> выключен — ответы только из знаний модели. "
-            "Нажмите «🌐 Интернет: выкл» на клавиатуре, чтобы включить."
+            "<b>Интернет:</b> выключен — ответы только из знаний модели. "
+            "Нажмите «Интернет: выкл», чтобы включить."
         )
 
     return (
-        "🤖 <b>ИИ-чат</b>\n\n"
+        "<b>ИИ-чат</b>\n\n"
         f"Провайдер: <b>{provider_name}</b>\n"
         f"Модель: <code>{model}</code>\n"
         f"Ключ API: <code>{masked_key}</code>\n\n"
         f"{web_line}\n\n"
         "Просто напишите сообщение — и я отвечу.\n"
-        "«🧹 Сбросить диалог» — очистить историю с нейросетью.\n"
-        "«⬅️ В меню» — вернуться в главное меню."
+        "«Сбросить диалог» — очистить историю с нейросетью.\n"
+        "«В меню» — вернуться в главное меню."
     )
 
 
 async def _reply_chunked(message: Message, text: str) -> None:
-    text = text or "🤖 (пустой ответ)"
+    text = text or "(пустой ответ)"
     chunks = [text[i : i + _MAX_MESSAGE_LEN] for i in range(0, len(text), _MAX_MESSAGE_LEN)]
     for chunk in chunks:
         await message.answer(chunk, parse_mode=None)
@@ -102,66 +97,52 @@ async def _reset_dialog(user_id: int, state: FSMContext) -> None:
     await state.set_state(AIStates.chatting)
 
 
+async def _render_screen(message: Message, settings, *, web_enabled: bool) -> None:
+    """Edit the current message to show the AI chat screen + inline controls."""
+    try:
+        await message.edit_text(
+            _info_text(settings, web_enabled=web_enabled),
+            reply_markup=ai_chat_kb(web_enabled=web_enabled),
+        )
+    except Exception:  # noqa: BLE001 - identical content / not modified is fine
+        logger.debug("AI screen edit skipped", exc_info=True)
+
+
 @router.callback_query(F.data == MENU_AI)
 async def open_ai(callback: CallbackQuery, state: FSMContext) -> None:
     settings = get_settings()
     await _set_web_enabled(state, settings.web_search_enabled)
     await state.set_state(AIStates.chatting)
     web_enabled = await _get_web_enabled(state)
-    await callback.message.edit_text(_info_text(settings, web_enabled=web_enabled))
-    await callback.message.answer(
-        "Готов к сообщениям.",
+    await callback.message.edit_text(
+        _info_text(settings, web_enabled=web_enabled),
         reply_markup=ai_chat_kb(web_enabled=web_enabled),
     )
     await callback.answer()
 
 
-@router.callback_query(F.data == AI_RESET)
-async def reset_dialog(callback: CallbackQuery, state: FSMContext) -> None:
-    web_enabled = await _get_web_enabled(state)
-    await _reset_dialog(callback.from_user.id, state)
-    await callback.message.answer(
-        "🧹 Диалог с нейросетью сброшен.",
-        reply_markup=ai_chat_kb(web_enabled=web_enabled),
-    )
-    await callback.answer("🧹 Диалог сброшен")
-
-
-@router.message(AIStates.chatting, F.text == AI_RESET_TEXT)
-async def reset_dialog_keyboard(message: Message, state: FSMContext) -> None:
-    web_enabled = await _get_web_enabled(state)
-    await _reset_dialog(message.from_user.id, state)
-    await message.answer(
-        "🧹 Диалог с нейросетью сброшен.",
-        reply_markup=ai_chat_kb(web_enabled=web_enabled),
-    )
-
-
-@router.message(AIStates.chatting, F.text.in_({AI_WEB_ON_TEXT, AI_WEB_OFF_TEXT}))
-async def toggle_web_search(message: Message, state: FSMContext) -> None:
+@router.callback_query(F.data == AI_WEB)
+async def toggle_web_search(callback: CallbackQuery, state: FSMContext) -> None:
     settings = get_settings()
     if not settings.web_search_enabled:
-        await message.answer(
-            "🌐 Веб-поиск отключён в настройках сервера (WEB_SEARCH_ENABLED=false).",
-            reply_markup=ai_chat_kb(web_enabled=False),
+        await callback.answer(
+            "Веб-поиск отключён в настройках сервера.", show_alert=True
         )
         return
 
-    current = await _get_web_enabled(state)
-    new_value = not current
+    new_value = not await _get_web_enabled(state)
     await _set_web_enabled(state, new_value)
-    if new_value:
-        text = "🌐 Интернет включён. Перед ответом буду искать актуальную информацию."
-    else:
-        text = "🌐 Интернет выключен. Ответы — только из знаний модели."
-    await message.answer(text, reply_markup=ai_chat_kb(web_enabled=new_value))
+    await _render_screen(callback.message, settings, web_enabled=new_value)
+    await callback.answer("Интернет включён" if new_value else "Интернет выключен")
 
 
-@router.message(AIStates.chatting, F.text == AI_MENU_TEXT)
-async def ai_back_to_menu(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    await message.answer("Главное меню:", reply_markup=ReplyKeyboardRemove())
-    await message.answer("Выберите раздел:", reply_markup=main_menu_kb())
+@router.callback_query(F.data == AI_RESET)
+async def reset_dialog(callback: CallbackQuery, state: FSMContext) -> None:
+    await _reset_dialog(callback.from_user.id, state)
+    settings = get_settings()
+    web_enabled = await _get_web_enabled(state)
+    await _render_screen(callback.message, settings, web_enabled=web_enabled)
+    await callback.answer("Диалог сброшен")
 
 
 @router.message(AIStates.chatting, F.text)
@@ -172,7 +153,7 @@ async def on_chat_message(message: Message, state: FSMContext) -> None:
     try:
         if web_enabled and get_settings().web_search_enabled:
             await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
-            status = await message.answer("🔍 Ищу в интернете…")
+            status = await message.answer("Ищу в интернете…")
         else:
             status = None
             await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
@@ -192,10 +173,7 @@ async def on_chat_message(message: Message, state: FSMContext) -> None:
                 await status.delete()
             except Exception:  # noqa: BLE001
                 pass
-        await message.answer(
-            f"⚠️ {html.escape(str(exc))}",
-            reply_markup=ai_chat_kb(web_enabled=web_enabled),
-        )
+        await message.answer(html.escape(str(exc)))
         return
     except Exception:
         logger.exception("Unexpected error in AI chat handler")
@@ -205,8 +183,7 @@ async def on_chat_message(message: Message, state: FSMContext) -> None:
             except Exception:  # noqa: BLE001
                 pass
         await message.answer(
-            "⚠️ Произошла непредвиденная ошибка. Попробуйте ещё раз позже.",
-            reply_markup=ai_chat_kb(web_enabled=web_enabled),
+            "Произошла непредвиденная ошибка. Попробуйте ещё раз позже."
         )
         return
 
@@ -217,10 +194,10 @@ async def on_chat_message(message: Message, state: FSMContext) -> None:
             pass
 
     if used_web:
-        reply = f"🌐 Ответ с данными из интернета:\n\n{reply}"
+        reply = f"Ответ с данными из интернета:\n\n{reply}"
     elif web_enabled:
         reply = (
-            "ℹ️ По запросу ничего не найдено в интернете — ответ по знаниям модели:\n\n"
+            "По запросу ничего не найдено в интернете — ответ по знаниям модели:\n\n"
             + reply
         )
 

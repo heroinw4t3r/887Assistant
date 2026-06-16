@@ -109,16 +109,16 @@ def _build_month_kb(
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
-    # Header: ◀  <Month Year>  ▶
+    # Header: <prev>  <Month Year>  <next>
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
     rows.append(
         [
-            InlineKeyboardButton(text="◀", callback_data=f"cal:month:{prev_year}:{prev_month}"),
+            InlineKeyboardButton(text="<", callback_data=f"cal:month:{prev_year}:{prev_month}"),
             InlineKeyboardButton(
                 text=f"{MONTHS_NOM[month - 1]} {year}", callback_data="cal:noop"
             ),
-            InlineKeyboardButton(text="▶", callback_data=f"cal:month:{next_year}:{next_month}"),
+            InlineKeyboardButton(text=">", callback_data=f"cal:month:{next_year}:{next_month}"),
         ]
     )
 
@@ -141,11 +141,11 @@ def _build_month_kb(
 
     rows.append(
         [
-            InlineKeyboardButton(text="📲 Синхронизация", callback_data="cal:sync"),
+            InlineKeyboardButton(text="Синхронизация", callback_data="cal:sync"),
             InlineKeyboardButton(text="Сегодня", callback_data="cal:today"),
         ]
     )
-    rows.append([InlineKeyboardButton(text="⬅️ В меню", callback_data=MENU_HOME)])
+    rows.append([InlineKeyboardButton(text="В меню", callback_data=MENU_HOME)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -157,7 +157,7 @@ async def _render_month(
         events = await service.list_events_in_month(session, owner_id, year, month, tz)
     event_days = {ensure_utc(ev.start_at).astimezone(zone).day for ev in events}
     text = (
-        f"📅 <b>{MONTHS_NOM[month - 1]} {year}</b>\n\n"
+        f"<b>{MONTHS_NOM[month - 1]} {year}</b>\n\n"
         "Выберите день. Точкой отмечены дни с событиями."
     )
     return text, _build_month_kb(year, month, event_days)
@@ -168,7 +168,7 @@ async def _render_day(owner_id: int, tz: str, day: date) -> tuple[str, InlineKey
     async with session_scope() as session:
         events = await service.list_events_for_day(session, owner_id, day, tz)
 
-    lines = [f"📅 <b>{_fmt_day_title(day)}</b>", ""]
+    lines = [f"<b>{_fmt_day_title(day)}</b>", ""]
     if events:
         for ev in events:
             lines.append(f"• {_event_line(ev, zone)}")
@@ -181,30 +181,30 @@ async def _render_day(owner_id: int, tz: str, day: date) -> tuple[str, InlineKey
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"📌 {_event_line(ev, zone)}", callback_data=f"cal:ev:{ev.id}"
+                    text=_event_line(ev, zone), callback_data=f"cal:ev:{ev.id}"
                 )
             ]
         )
     iso = day.isoformat()
-    rows.append([InlineKeyboardButton(text="➕ Добавить событие", callback_data=f"cal:add:{iso}")])
+    rows.append([InlineKeyboardButton(text="Добавить событие", callback_data=f"cal:add:{iso}")])
     rows.append(
-        [InlineKeyboardButton(text="◀ Месяц", callback_data=f"cal:month:{day.year}:{day.month}")]
+        [InlineKeyboardButton(text="Месяц", callback_data=f"cal:month:{day.year}:{day.month}")]
     )
-    rows.append([InlineKeyboardButton(text="⬅️ В меню", callback_data=MENU_HOME)])
+    rows.append([InlineKeyboardButton(text="В меню", callback_data=MENU_HOME)])
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _render_event(event, tz: str) -> tuple[str, InlineKeyboardMarkup]:
     zone = resolve_tz(tz)
     local = ensure_utc(event.start_at).astimezone(zone)
-    lines = [f"📌 <b>{escape(event.title)}</b>", ""]
+    lines = [f"<b>{escape(event.title)}</b>", ""]
     if event.all_day:
-        lines.append(f"🗓 {_fmt_day_title(local.date())} · весь день")
+        lines.append(f"{_fmt_day_title(local.date())} · весь день")
     else:
-        lines.append(f"🗓 {_fmt_day_title(local.date())}")
-        lines.append(f"🕒 {local.strftime('%H:%M')}")
+        lines.append(f"{_fmt_day_title(local.date())}")
+        lines.append(f"{local.strftime('%H:%M')}")
     if event.reminder_minutes is not None:
-        lines.append(f"🔔 Напоминание {_reminder_label(event.reminder_minutes)}")
+        lines.append(f"Напоминание {_reminder_label(event.reminder_minutes)}")
     if event.description:
         lines.append("")
         lines.append(escape(event.description))
@@ -213,9 +213,9 @@ def _render_event(event, tz: str) -> tuple[str, InlineKeyboardMarkup]:
     iso = local.date().isoformat()
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"cal:del:{event.id}")],
-            [InlineKeyboardButton(text="◀ День", callback_data=f"cal:day:{iso}")],
-            [InlineKeyboardButton(text="⬅️ В меню", callback_data=MENU_HOME)],
+            [InlineKeyboardButton(text="Удалить", callback_data=f"cal:del:{event.id}")],
+            [InlineKeyboardButton(text="День", callback_data=f"cal:day:{iso}")],
+            [InlineKeyboardButton(text="В меню", callback_data=MENU_HOME)],
         ]
     )
     return text, kb
@@ -325,21 +325,21 @@ async def show_sync(callback: CallbackQuery) -> None:
     webcal_url = f"webcal://{parts.netloc}{parts.path}/calendar/{user.calendar_token}.ics"
 
     text = (
-        "📲 <b>Синхронизация календаря с телефоном</b>\n\n"
+        "<b>Синхронизация календаря с телефоном</b>\n\n"
         "Подпишитесь на персональную ленту в формате <b>.ics</b>/<b>webcal</b>:\n\n"
         f"<code>{escape(https_url)}</code>\n\n"
         f"<code>{escape(webcal_url)}</code>\n\n"
-        "<b>Google Календарь:</b> Другие календари → Подписаться по URL → вставьте ссылку.\n"
-        "<b>Apple/iOS:</b> Настройки → Календарь → Учётные записи → "
-        "Добавить учётную запись → Другое → Подписной календарь.\n\n"
-        "⚠️ Это <b>одностороннняя</b> синхронизация, только для чтения: события появляются "
+        "<b>Google Календарь:</b> Другие календари -> Подписаться по URL -> вставьте ссылку.\n"
+        "<b>Apple/iOS:</b> Настройки -> Календарь -> Учётные записи -> "
+        "Добавить учётную запись -> Другое -> Подписной календарь.\n\n"
+        "Это <b>одностороннняя</b> синхронизация, только для чтения: события появляются "
         "на телефоне, но изменить их там нельзя. Телефон обновляет ленту не сразу "
         "(интервал может составлять несколько часов)."
     )
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="◀ Календарь", callback_data=MENU_CALENDAR)],
-            [InlineKeyboardButton(text="⬅️ В меню", callback_data=MENU_HOME)],
+            [InlineKeyboardButton(text="Календарь", callback_data=MENU_CALENDAR)],
+            [InlineKeyboardButton(text="В меню", callback_data=MENU_HOME)],
         ]
     )
     await callback.message.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
@@ -351,7 +351,7 @@ async def show_sync(callback: CallbackQuery) -> None:
 # --------------------------------------------------------------------------- #
 def _cancel_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="✖️ Отмена", callback_data=MENU_CALENDAR)]]
+        inline_keyboard=[[InlineKeyboardButton(text="Отмена", callback_data=MENU_CALENDAR)]]
     )
 
 
@@ -362,7 +362,7 @@ async def add_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(day=iso)
     await state.set_state(AddEvent.title)
     await callback.message.edit_text(
-        f"➕ <b>Новое событие на {escape(iso)}</b>\n\nВведите название события:",
+        f"<b>Новое событие на {escape(iso)}</b>\n\nВведите название события:",
         reply_markup=_cancel_kb(),
     )
     await callback.answer()
@@ -459,12 +459,12 @@ async def add_reminder(callback: CallbackQuery, state: FSMContext) -> None:
 
     when = "весь день" if all_day else local_start.strftime("%H:%M")
     confirm = (
-        "✅ <b>Событие создано</b>\n\n"
+        "<b>Событие создано</b>\n\n"
         f"<b>{escape(data['title'])}</b>\n"
-        f"🗓 {_fmt_day_title(day)} · {when}"
+        f"{_fmt_day_title(day)} · {when}"
     )
     if reminder_minutes is not None:
-        confirm += f"\n🔔 Напоминание {_reminder_label(reminder_minutes)}"
+        confirm += f"\nНапоминание {_reminder_label(reminder_minutes)}"
 
     text, kb = await _render_day(user.id, user.timezone, day)
     await callback.message.edit_text(confirm)

@@ -182,9 +182,9 @@ def test_format_check_results_labels():
         _result("err1", NickStatus.ERROR, detail="boom"),
     ]
     text = format_check_results(results)
-    assert "✅ <code>free1</code>" in text
-    assert "⛔ <code>taken1</code>" in text
-    assert "⚠️ <code>err1</code>" in text
+    assert "<code>free1</code> — свободен" in text
+    assert "<code>taken1</code> — занят" in text
+    assert "<code>err1</code> — ошибка" in text
 
 
 def test_format_check_results_empty():

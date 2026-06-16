@@ -171,15 +171,15 @@ def format_free_list(results: Sequence[NickResult]) -> list[str]:
     free_nicks = [r.nickname for r in results if r.status is NickStatus.FREE]
 
     header = (
-        f"📊 Итог проверки\n"
-        f"✅ Свободно: <b>{free}</b>  ⛔ Занято: <b>{taken}</b>  ⚠️ Ошибок: <b>{error}</b>"
+        f"Итог проверки\n"
+        f"Свободно: <b>{free}</b>  Занято: <b>{taken}</b>  Ошибок: <b>{error}</b>"
     )
 
     if not free_nicks:
         return [f"{header}\n\nСвободных ников не найдено."]
 
     chunks: list[str] = []
-    current = f"{header}\n\n✅ Свободные ники:\n"
+    current = f"{header}\n\nСвободные ники:\n"
     for nick in free_nicks:
         line = _code(nick) + "\n"
         if len(current) + len(line) > _MAX_CHUNK_CHARS:
@@ -199,10 +199,10 @@ def format_check_results(results: Sequence[NickResult]) -> str:
     lines: list[str] = []
     for r in results:
         if r.status is NickStatus.FREE:
-            lines.append(f"✅ {_code(r.nickname)} — свободен")
+            lines.append(f"{_code(r.nickname)} — свободен")
         elif r.status is NickStatus.TAKEN:
-            lines.append(f"⛔ {_code(r.nickname)} — занят")
+            lines.append(f"{_code(r.nickname)} — занят")
         else:
             detail = f" ({html.escape(r.detail)})" if r.detail else ""
-            lines.append(f"⚠️ {_code(r.nickname)} — ошибка{detail}")
+            lines.append(f"{_code(r.nickname)} — ошибка{detail}")
     return "\n".join(lines)
