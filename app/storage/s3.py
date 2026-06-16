@@ -84,3 +84,12 @@ class S3StorageBackend:
         if not self._public_base_url:
             return None
         return f"{self._public_base_url.rstrip('/')}/{key}"
+
+    async def healthcheck(self) -> None:
+        try:
+            await asyncio.to_thread(lambda: self._client.head_bucket(Bucket=self._bucket))
+        except (BotoCoreError, ClientError) as exc:
+            raise StorageError(
+                f"cannot access S3 bucket {self._bucket!r} "
+                f"(check credentials, endpoint and bucket access): {exc}"
+            ) from exc

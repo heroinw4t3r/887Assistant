@@ -64,3 +64,18 @@ class LocalStorageBackend:
 
     def public_url(self, key: str) -> str | None:
         return None
+
+    async def healthcheck(self) -> None:
+        def _probe() -> None:
+            os.makedirs(self._base_path, exist_ok=True)
+            probe = os.path.join(self._base_path, ".healthcheck")
+            with open(probe, "wb") as fh:
+                fh.write(b"ok")
+            os.remove(probe)
+
+        try:
+            await asyncio.to_thread(_probe)
+        except OSError as exc:
+            raise StorageError(
+                f"local storage path {self._base_path!r} is not writable: {exc}"
+            ) from exc
