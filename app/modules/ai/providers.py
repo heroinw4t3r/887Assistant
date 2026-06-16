@@ -115,7 +115,10 @@ class OpenAICompatibleProvider:
 # provider name -> (base_url, default_model)
 _PROVIDER_DEFAULTS: dict[str, tuple[str, str]] = {
     "moonshot": ("https://api.moonshot.ai/v1", "kimi-k2.6"),
-    "openrouter": ("https://openrouter.ai/api/v1", "deepseek/deepseek-chat"),
+    "openrouter": (
+        "https://openrouter.ai/api/v1",
+        "meta-llama/llama-3.3-70b-instruct:free",
+    ),
     "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
     "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"),
 }

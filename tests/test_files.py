@@ -184,3 +184,49 @@ async def test_delete_file_missing_path_ignored(sessionmaker_fixture):
         ok = await service.delete_file(session, OWNER_ID, file_id)
         await session.commit()
         assert ok is True
+
+
+async def test_create_folder_and_assign_file(sessionmaker_fixture):
+    async with sessionmaker_fixture() as session:
+        folder = await service.create_folder(session, OWNER_ID, "Docs")
+        stored = await service.save_file(
+            session,
+            OWNER_ID,
+            file_name="readme.txt",
+            mime_type="text/plain",
+            size=5,
+            telegram_file_id="tg-readme",
+            kind="document",
+            folder_id=folder.id,
+        )
+        await session.commit()
+        folder_id = folder.id
+        file_id = stored.id
+
+    async with sessionmaker_fixture() as session:
+        files, total = await service.list_files(session, OWNER_ID, folder_id=folder_id)
+        assert total == 1
+        assert files[0].id == file_id
+
+        root_files, root_total = await service.list_files(session, OWNER_ID, folder_id=None)
+        assert root_total == 0
+        assert root_files == []
+
+
+async def test_get_storage_stats(sessionmaker_fixture, monkeypatch):
+    monkeypatch.setattr(
+        "app.modules.files.service.get_settings",
+        lambda: type("S", (), {"file_storage_quota_bytes": 100})(),
+    )
+    async with sessionmaker_fixture() as session:
+        await _make_file(session, OWNER_ID, "a.bin", size=40)
+        await _make_file(session, OWNER_ID, "b.bin", size=50)
+        await service.create_folder(session, OWNER_ID, "Archive")
+        await session.commit()
+
+    async with sessionmaker_fixture() as session:
+        used, file_count, folder_count, quota = await service.get_storage_stats(session, OWNER_ID)
+        assert used == 90
+        assert file_count == 2
+        assert folder_count == 1
+        assert quota == 100

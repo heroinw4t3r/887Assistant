@@ -11,11 +11,20 @@ user can only ever see or mutate their own files.
 from __future__ import annotations
 
 import os
+import re
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import StoredFile
+from app.config import get_settings
+from app.db.models import FileFolder, StoredFile
+
+
+def _safe_disk_name(name: str) -> str:
+    base = os.path.basename(name or "").strip()
+    base = re.sub(r"[^\w.\- ]", "_", base)
+    base = base.strip().strip(".")
+    return base or "file"
 
 
 async def save_file(
@@ -28,10 +37,17 @@ async def save_file(
     telegram_file_id: str,
     kind: str,
     storage_path: str | None = None,
+    folder_id: int | None = None,
 ) -> StoredFile:
     """Persist a new file record and return it (with its generated id)."""
+    if folder_id is not None:
+        folder = await get_folder(session, owner_id, folder_id)
+        if folder is None:
+            folder_id = None
+
     stored = StoredFile(
         owner_id=owner_id,
+        folder_id=folder_id,
         file_name=file_name,
         mime_type=mime_type,
         size=size,
@@ -52,16 +68,15 @@ async def list_files(
     offset: int = 0,
     limit: int = 5,
     query: str | None = None,
+    folder_id: int | None = None,
 ) -> tuple[list[StoredFile], int]:
-    """Return a page of the user's files plus the total matching count.
-
-    ``query`` (when given) filters by ``file_name`` using a case-insensitive
-    ``LIKE`` match.
-    """
+    """Return a page of the user's files plus the total matching count."""
     conditions = [StoredFile.owner_id == owner_id]
     if query:
         like = f"%{query.strip()}%"
         conditions.append(StoredFile.file_name.ilike(like))
+    else:
+        conditions.append(StoredFile.folder_id.is_(folder_id))
 
     total_stmt = select(func.count()).select_from(StoredFile).where(*conditions)
     total = (await session.execute(total_stmt)).scalar_one()
@@ -75,6 +90,68 @@ async def list_files(
     )
     rows = list((await session.execute(page_stmt)).scalars().all())
     return rows, int(total)
+
+
+async def list_folders(
+    session: AsyncSession,
+    owner_id: int,
+    *,
+    parent_id: int | None = None,
+) -> list[FileFolder]:
+    stmt = (
+        select(FileFolder)
+        .where(FileFolder.owner_id == owner_id, FileFolder.parent_id.is_(parent_id))
+        .order_by(FileFolder.name.asc(), FileFolder.id.asc())
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_folder(
+    session: AsyncSession, owner_id: int, folder_id: int
+) -> FileFolder | None:
+    stmt = select(FileFolder).where(
+        FileFolder.id == folder_id, FileFolder.owner_id == owner_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def create_folder(
+    session: AsyncSession,
+    owner_id: int,
+    name: str,
+    *,
+    parent_id: int | None = None,
+) -> FileFolder:
+    clean = name.strip() or "Папка"
+    if parent_id is not None:
+        parent = await get_folder(session, owner_id, parent_id)
+        if parent is None:
+            parent_id = None
+    folder = FileFolder(owner_id=owner_id, name=clean, parent_id=parent_id)
+    session.add(folder)
+    await session.flush()
+    await session.refresh(folder)
+    return folder
+
+
+async def get_storage_stats(
+    session: AsyncSession, owner_id: int
+) -> tuple[int, int, int, int | None]:
+    """Return used bytes, file count, folder count, and quota bytes (``None`` = unlimited)."""
+    used_stmt = select(func.coalesce(func.sum(StoredFile.size), 0), func.count()).where(
+        StoredFile.owner_id == owner_id
+    )
+    used, file_count = (await session.execute(used_stmt)).one()
+    folder_count = (
+        await session.execute(
+            select(func.count())
+            .select_from(FileFolder)
+            .where(FileFolder.owner_id == owner_id)
+        )
+    ).scalar_one()
+    quota = get_settings().file_storage_quota_bytes
+    quota_value = None if quota <= 0 else int(quota)
+    return int(used), int(file_count), int(folder_count), quota_value
 
 
 async def get_file(session: AsyncSession, owner_id: int, file_id: int) -> StoredFile | None:
@@ -93,6 +170,12 @@ async def rename_file(
     if stored is None:
         return None
     stored.file_name = new_name
+    if stored.storage_path and os.path.isfile(stored.storage_path):
+        directory = os.path.dirname(stored.storage_path)
+        new_path = os.path.join(directory, f"{stored.id}_{_safe_disk_name(new_name)}")
+        if new_path != stored.storage_path:
+            os.rename(stored.storage_path, new_path)
+            stored.storage_path = new_path
     await session.flush()
     await session.refresh(stored)
     return stored
@@ -107,7 +190,6 @@ async def delete_file(session: AsyncSession, owner_id: int, file_id: int) -> boo
         try:
             os.remove(stored.storage_path)
         except OSError:
-            # The DB record is the source of truth; ignore filesystem errors.
             pass
     await session.delete(stored)
     await session.flush()

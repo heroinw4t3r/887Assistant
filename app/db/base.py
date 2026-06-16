@@ -19,6 +19,19 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
+def _migrate_sqlite_schema(connection) -> None:
+    """Add columns introduced after the first release (SQLite create_all is not additive)."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "files" in inspector.get_table_names():
+        file_cols = {col["name"] for col in inspector.get_columns("files")}
+        if "folder_id" not in file_cols:
+            connection.execute(
+                text("ALTER TABLE files ADD COLUMN folder_id INTEGER REFERENCES file_folders(id)")
+            )
+
+
 _settings = get_settings()
 
 engine = create_async_engine(_settings.database_url, echo=False, future=True)
@@ -45,6 +58,8 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if _settings.is_sqlite:
+            await conn.run_sync(_migrate_sqlite_schema)
 
 
 @asynccontextmanager

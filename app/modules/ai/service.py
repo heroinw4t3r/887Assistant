@@ -1,9 +1,4 @@
-"""AI chat business logic: conversation history persistence + provider calls.
-
-History is stored as a JSON array of ``{"role": ..., "content": ...}`` objects in
-``AISession.messages_json`` (the system prompt is *not* stored). It is trimmed to
-the last ``settings.llm_max_history_messages`` messages on every save.
-"""
+"""AI chat business logic: conversation history persistence + provider calls."""
 from __future__ import annotations
 
 import json
@@ -14,13 +9,27 @@ from app.config import get_settings
 from app.db.base import session_scope
 from app.db.models import AISession
 from app.modules.ai.providers import get_provider
+from app.modules.ai.web_search import format_results_for_prompt, search_web
 
-# A concise, helpful, Russian-speaking assistant persona.
 SYSTEM_PROMPT = (
     "Ты — дружелюбный и полезный ассистент в Telegram-боте. "
     "Отвечай ясно, по делу и без лишней воды. "
     "Если пользователь пишет по-русски, отвечай по-русски; "
     "форматируй ответы простым текстом без HTML-разметки."
+)
+
+SYSTEM_PROMPT_OFFLINE = (
+    SYSTEM_PROMPT
+    + " У тебя нет доступа к интернету — не выдумывай актуальные факты "
+    "(погода, новости, курсы и т.п.). Если нужны свежие данные, попроси "
+    "пользователя включить «🌐 Интернет: вкл» в клавиатуре чата."
+)
+
+SYSTEM_PROMPT_ONLINE = (
+    SYSTEM_PROMPT
+    + " Ниже приложены свежие результаты веб-поиска. Опирайся на них при ответе, "
+    "не выдумывай факты beyond этих данных. Если данных недостаточно — скажи об этом. "
+    "При необходимости указывай источники (URL)."
 )
 
 
@@ -46,7 +55,6 @@ async def _get_or_create_session(session: AsyncSession, owner_id: int) -> AISess
 
 
 async def get_history(session: AsyncSession, owner_id: int) -> list[dict]:
-    """Return the stored conversation history (may be empty)."""
     row = await session.get(AISession, owner_id)
     if row is None:
         return []
@@ -56,7 +64,6 @@ async def get_history(session: AsyncSession, owner_id: int) -> list[dict]:
 async def append_and_save(
     session: AsyncSession, owner_id: int, role: str, content: str
 ) -> list[dict]:
-    """Append a message, trim to the configured limit, persist and return history."""
     row = await _get_or_create_session(session, owner_id)
     history = _decode(row.messages_json)
     history.append({"role": role, "content": content})
@@ -71,7 +78,6 @@ async def append_and_save(
 
 
 async def reset(session: AsyncSession, owner_id: int) -> None:
-    """Clear the conversation history for ``owner_id``."""
     row = await session.get(AISession, owner_id)
     if row is None:
         session.add(AISession(owner_id=owner_id, messages_json="[]"))
@@ -80,21 +86,26 @@ async def reset(session: AsyncSession, owner_id: int) -> None:
     await session.flush()
 
 
-async def ask(owner_id: int, user_text: str) -> str:
-    """Run a full chat turn: persist the user message, call the provider, store the reply.
+async def ask(owner_id: int, user_text: str, *, web_enabled: bool = False) -> tuple[str, bool]:
+    """Run a chat turn. Returns ``(reply, used_web_search)``."""
+    settings = get_settings()
+    provider = get_provider(settings)
+    system_prompt = SYSTEM_PROMPT_OFFLINE
+    used_web = False
 
-    Raises :class:`AIError` (re-raised) on provider failures so the handler can show a
-    friendly message. On error nothing is committed (the surrounding transaction rolls
-    back), so a failed turn does not pollute the stored history.
-    """
-    provider = get_provider(get_settings())
+    if settings.web_search_enabled and web_enabled:
+        results = await search_web(user_text, settings)
+        if results:
+            used_web = True
+            system_prompt = (
+                SYSTEM_PROMPT_ONLINE
+                + "\n\n"
+                + format_results_for_prompt(user_text, results)
+            )
 
     async with session_scope() as session:
         await _get_or_create_session(session, owner_id)
         history = await append_and_save(session, owner_id, "user", user_text)
-
-        # AIError propagates: session_scope rolls back, so a failed turn is not stored.
-        reply = await provider.chat(history, system=SYSTEM_PROMPT)
-
+        reply = await provider.chat(history, system=system_prompt)
         await append_and_save(session, owner_id, "assistant", reply)
-        return reply
+        return reply, used_web

@@ -13,6 +13,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.bot import errors as errors_router
 from app.bot import menu as menu_router
 from app.bot import runtime
+from app.bot.message_tracking import patch_bot_for_message_tracking
 from app.config import get_settings
 from app.db.base import init_db
 from app.logging_config import setup_logging
@@ -51,6 +52,7 @@ async def main() -> None:
         token=settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+    patch_bot_for_message_tracking(bot)
     runtime.set_bot(bot)
 
     scheduler = AsyncIOScheduler(timezone="UTC")

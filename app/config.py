@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # File storage
     file_storage_path: str = Field(default="./storage", alias="FILE_STORAGE_PATH")
     file_max_download_bytes: int = Field(default=20 * 1024 * 1024, alias="FILE_MAX_DOWNLOAD_BYTES")
+    # Per-user storage quota in bytes; 0 = unlimited.
+    file_storage_quota_bytes: int = Field(
+        default=500 * 1024 * 1024, alias="FILE_STORAGE_QUOTA_BYTES"
+    )
 
     # LLM / AI chat
     llm_provider: str = Field(default="moonshot", alias="LLM_PROVIDER")
@@ -37,6 +41,12 @@ class Settings(BaseSettings):
     llm_base_url: str = Field(default="", alias="LLM_BASE_URL")
     llm_max_history_messages: int = Field(default=20, alias="LLM_MAX_HISTORY_MESSAGES")
     llm_request_timeout: int = Field(default=60, alias="LLM_REQUEST_TIMEOUT")
+
+    # AI web search
+    web_search_enabled: bool = Field(default=True, alias="WEB_SEARCH_ENABLED")
+    web_search_provider: str = Field(default="duckduckgo", alias="WEB_SEARCH_PROVIDER")
+    web_search_max_results: int = Field(default=5, alias="WEB_SEARCH_MAX_RESULTS")
+    tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
 
     # FACEIT
     faceit_api_key: str = Field(default="", alias="FACEIT_API_KEY")

@@ -2,7 +2,9 @@
 
 Tables:
   users                  -- Telegram users known to the bot (+ per-user calendar feed token)
+  file_folders           -- user-created folders for the files module
   files                  -- stored file metadata (content on disk and/or Telegram file_id)
+  bot_chat_messages      -- bot message ids for per-chat cleanup
   events                 -- calendar events
   ai_sessions            -- per-user AI chat conversation state
 
@@ -56,9 +58,31 @@ class User(Base):
     files: Mapped[list[StoredFile]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
     )
+    folders: Mapped[list[FileFolder]] = relationship(
+        back_populates="owner", cascade="all, delete-orphan"
+    )
     events: Mapped[list[CalendarEvent]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
     )
+
+
+class FileFolder(Base):
+    __tablename__ = "file_folders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("file_folders.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    owner: Mapped[User] = relationship(back_populates="folders")
+    files: Mapped[list[StoredFile]] = relationship(back_populates="folder")
 
 
 class StoredFile(Base):
@@ -67,6 +91,9 @@ class StoredFile(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     owner_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    folder_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("file_folders.id", ondelete="SET NULL"), nullable=True, index=True
     )
     file_name: Mapped[str] = mapped_column(String(512), nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -82,6 +109,21 @@ class StoredFile(Base):
     )
 
     owner: Mapped[User] = relationship(back_populates="files")
+    folder: Mapped[FileFolder | None] = relationship(back_populates="files")
+
+
+class BotChatMessage(Base):
+    __tablename__ = "bot_chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class CalendarEvent(Base):

@@ -46,7 +46,7 @@ class FakeSettings:
         ("moonshot", "https://api.moonshot.ai/v1", "kimi-k2.6"),
         ("groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
         ("gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"),
-        ("openrouter", "https://openrouter.ai/api/v1", "deepseek/deepseek-chat"),
+        ("openrouter", "https://openrouter.ai/api/v1", "meta-llama/llama-3.3-70b-instruct:free"),
     ],
 )
 def test_get_provider_defaults(provider: str, base_url: str, model: str) -> None:
@@ -139,6 +139,7 @@ async def test_ask_full_turn_with_stub_provider(db_session, monkeypatch) -> None
             return "Привет! Чем помочь?"
 
     monkeypatch.setattr(service, "get_provider", lambda settings: StubProvider())
+    monkeypatch.setattr(service, "search_web", lambda *args, **kwargs: [])
 
     @asynccontextmanager
     async def fake_scope():
@@ -146,13 +147,54 @@ async def test_ask_full_turn_with_stub_provider(db_session, monkeypatch) -> None
 
     monkeypatch.setattr(service, "session_scope", fake_scope)
 
-    reply = await service.ask(1, "Привет")
+    reply, used_web = await service.ask(1, "Привет", web_enabled=False)
     assert reply == "Привет! Чем помочь?"
+    assert used_web is False
 
     # The provider received the system prompt + the user message.
-    assert captured["system"] == service.SYSTEM_PROMPT
+    assert captured["system"] == service.SYSTEM_PROMPT_OFFLINE
     assert captured["messages"][-1] == {"role": "user", "content": "Привет"}
 
     history = await service.get_history(db_session, 1)
     assert history[-2] == {"role": "user", "content": "Привет"}
     assert history[-1] == {"role": "assistant", "content": "Привет! Чем помочь?"}
+
+
+async def test_ask_with_web_search_context(db_session, monkeypatch) -> None:
+    monkeypatch.setattr(service, "get_settings", lambda: FakeSettings(llm_max_history_messages=20))
+
+    captured: dict = {}
+
+    class StubProvider:
+        name = "stub"
+        model = "stub-model"
+
+        async def chat(self, messages, *, system=None):
+            captured["system"] = system
+            return "Сейчас +5°C."
+
+    async def fake_search(query, settings):
+        from app.modules.ai.web_search import SearchResult
+
+        return [
+            SearchResult(
+                title="Weather",
+                url="https://example.com/weather",
+                snippet="Moscow +5C",
+            )
+        ]
+
+    monkeypatch.setattr(service, "get_provider", lambda settings: StubProvider())
+    monkeypatch.setattr(service, "search_web", fake_search)
+
+    @asynccontextmanager
+    async def fake_scope():
+        yield db_session
+
+    monkeypatch.setattr(service, "session_scope", fake_scope)
+
+    reply, used_web = await service.ask(1, "Какая погода?", web_enabled=True)
+    assert used_web is True
+    assert reply == "Сейчас +5°C."
+    assert "Weather" in captured["system"]
+    assert "https://example.com/weather" in captured["system"]

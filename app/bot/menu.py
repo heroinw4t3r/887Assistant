@@ -4,10 +4,11 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
-from app.bot.callbacks import MENU_HOME
+from app.bot.callbacks import MENU_CLEAR, MENU_HOME
 from app.bot.keyboards import main_menu_kb
+from app.bot.message_tracking import clear_tracked_messages
 from app.db.base import session_scope
 from app.db.repository import get_or_create_user
 
@@ -18,7 +19,7 @@ WELCOME = (
     "Я умею:\n"
     "📁 <b>Файлы</b> — загрузка и хранение ваших файлов\n"
     "📅 <b>Календарь</b> — события и синхронизация с телефоном\n"
-    "🤖 <b>ИИ-чат</b> — общение с нейросетью (Kimi и др.)\n"
+    "🤖 <b>ИИ-чат</b> — общение с нейросетью (OpenRouter / Llama и др.)\n"
     "🎮 <b>FACEIT ники</b> — проверка доступности никнеймов\n\n"
     "Выберите раздел:"
 )
@@ -47,4 +48,20 @@ async def cmd_menu(message: Message, state: FSMContext) -> None:
 async def open_home(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("Главное меню:", reply_markup=main_menu_kb())
+    await callback.message.answer("⌨️", reply_markup=ReplyKeyboardRemove())
     await callback.answer()
+
+
+@router.callback_query(F.data == MENU_CLEAR)
+async def clear_chat(callback: CallbackQuery, state: FSMContext) -> None:
+    deleted = await clear_tracked_messages(
+        callback.bot, callback.from_user.id, callback.message.chat.id
+    )
+    await state.clear()
+    await callback.message.answer(
+        f"🧹 Удалено сообщений бота: <b>{deleted}</b>.\n"
+        "Контекст ИИ-чата сохранён — диалог с нейросетью не сброшен.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await callback.message.answer("Главное меню:", reply_markup=main_menu_kb())
+    await callback.answer("Чат очищен")
