@@ -25,6 +25,7 @@ class _FakeSettings:
         self.s3_bucket = kwargs.get("s3_bucket", "")
         self.s3_region = kwargs.get("s3_region", "auto")
         self.s3_public_base_url = kwargs.get("s3_public_base_url", "")
+        self.s3_force_path_style = kwargs.get("s3_force_path_style", False)
 
 
 @pytest.fixture(autouse=True)
@@ -181,6 +182,35 @@ def test_s3_public_url_none_without_base(monkeypatch):
     monkeypatch.setattr("boto3.client", lambda *a, **k: fake)
     backend = S3StorageBackend(bucket="b", public_base_url="")
     assert backend.public_url("x") is None
+
+
+def test_s3_force_path_style_passes_path_addressing(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _capture(*args, **kwargs):
+        captured["config"] = kwargs.get("config")
+        return _FakeS3Client()
+
+    monkeypatch.setattr("boto3.client", _capture)
+    S3StorageBackend(bucket="b", force_path_style=True)
+
+    config = captured["config"]
+    assert config is not None
+    assert config.s3["addressing_style"] == "path"
+
+
+def test_s3_default_does_not_force_path_style(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _capture(*args, **kwargs):
+        captured["config"] = kwargs.get("config")
+        return _FakeS3Client()
+
+    monkeypatch.setattr("boto3.client", _capture)
+    S3StorageBackend(bucket="b")
+
+    config = captured["config"]
+    assert config is None
 
 
 async def test_s3_wraps_errors(monkeypatch):

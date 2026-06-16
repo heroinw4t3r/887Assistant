@@ -5,12 +5,17 @@ worker thread via :func:`asyncio.to_thread` to keep the event loop responsive.
 
 The combination of a custom ``endpoint_url`` plus ``region_name="auto"`` is
 exactly how Cloudflare R2 is addressed through the S3 API.
+
+Some S3-compatible gateways (notably Storj's ``gateway.storjshare.io``) work more
+reliably with PATH-STYLE addressing rather than virtual-hosted-style. Pass
+``force_path_style=True`` to enable it via a botocore ``Config``.
 """
 from __future__ import annotations
 
 import asyncio
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.storage.base import StorageError
@@ -30,15 +35,18 @@ class S3StorageBackend:
         secret_access_key: str | None = None,
         region: str = "auto",
         public_base_url: str | None = None,
+        force_path_style: bool = False,
     ) -> None:
         self._bucket = bucket
         self._public_base_url = public_base_url or None
+        config = Config(s3={"addressing_style": "path"}) if force_path_style else None
         self._client = boto3.client(
             "s3",
             endpoint_url=endpoint_url or None,
             aws_access_key_id=access_key_id or None,
             aws_secret_access_key=secret_access_key or None,
             region_name=region or None,
+            config=config,
         )
 
     async def save(self, key: str, data: bytes, *, content_type: str | None = None) -> None:

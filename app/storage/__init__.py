@@ -34,6 +34,7 @@ def _build_backend(settings) -> StorageBackend:
             secret_access_key=settings.s3_secret_access_key,
             region=settings.s3_region,
             public_base_url=settings.s3_public_base_url,
+            force_path_style=settings.s3_force_path_style,
         )
     return LocalStorageBackend(settings.file_storage_path)
 

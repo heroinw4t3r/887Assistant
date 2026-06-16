@@ -48,7 +48,8 @@ docker compose up --build
 | `TELEGRAM_BOT_TOKEN` | токен бота от [@BotFather](https://t.me/BotFather) |
 | `DATABASE_URL` | SQLite (по умолчанию) или PostgreSQL. Railway отдаёт `postgresql://…` — приложение само нормализует его в `postgresql+asyncpg://…` |
 | `STORAGE_BACKEND` | `local` (по умолчанию) или `s3` — куда складывать файлы |
-| `S3_ENDPOINT_URL` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` / `S3_BUCKET` / `S3_REGION` | параметры объектного хранилища (Cloudflare R2 / S3) |
+| `S3_ENDPOINT_URL` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` / `S3_BUCKET` / `S3_REGION` | параметры объектного хранилища (Cloudflare R2 / Storj / S3) |
+| `S3_FORCE_PATH_STYLE` | `true` для провайдеров, которым нужен path-style (например Storj); по умолчанию `false` |
 | `FILE_STORAGE_PATH` | каталог для файлов при `STORAGE_BACKEND=local` |
 | `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` | провайдер и ключ ИИ-чата |
 | `WEB_SEARCH_PROVIDER` / `TAVILY_API_KEY` | веб-поиск для ИИ (по умолчанию `tavily`) |
@@ -82,6 +83,20 @@ docker compose up --build
 4. **Веб-сервер:** `WEB_PORT=${{PORT}}`, `WEB_HOST=0.0.0.0`, `BASE_URL=https://<домен>.up.railway.app`.
 
 > Volume на тарифе Hobby ограничен 5 ГБ, поэтому для «10 ГБ» под файлы используется именно объектное хранилище (R2). Маленький Postgres под метаданные с запасом укладывается в лимиты.
+
+### Storj (EU)
+
+Storj предоставляет S3-совместимый шлюз. Для хранения данных в ЕС создайте access/secret в консоли Storj на **EU1-сателлите** (data residency для ЕС) и используйте path-style адресацию:
+
+```bash
+STORAGE_BACKEND=s3
+S3_ENDPOINT_URL=https://gateway.storjshare.io
+S3_REGION=eu1
+S3_ACCESS_KEY_ID=<storj-access-key>
+S3_SECRET_ACCESS_KEY=<storj-secret-key>
+S3_BUCKET=<bucket>
+S3_FORCE_PATH_STYLE=true
+```
 
 ## Тесты и линт
 
