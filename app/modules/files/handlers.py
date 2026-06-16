@@ -197,7 +197,12 @@ def _detail_text(stored: StoredFile) -> str:
     created = stored.created_at
     when = created.strftime("%Y-%m-%d %H:%M") if isinstance(created, datetime) else "—"
     mime = html.escape(stored.mime_type) if stored.mime_type else "—"
-    location = "на сервере" if stored.storage_path else "по ссылке Telegram"
+    if stored.storage_backend == "s3":
+        location = "в облаке (S3/R2)"
+    elif stored.storage_backend == "local" or stored.storage_path:
+        location = "на сервере"
+    else:
+        location = "по ссылке Telegram"
     return (
         f"📄 <b>{html.escape(stored.file_name)}</b>\n"
         f"Размер: {_human_size(stored.size)}\n"
@@ -304,13 +309,17 @@ async def _render_list(
         folder_name: str | None = None
         parent_id: int | None = None
         if query is None:
-            folders = await service.list_folders(session, callback.from_user.id, parent_id=folder_id)
+            folders = await service.list_folders(
+                session, callback.from_user.id, parent_id=folder_id
+            )
             if folder_id is not None:
                 folder = await service.get_folder(session, callback.from_user.id, folder_id)
                 if folder is None:
                     await _set_current_folder(state, None)
                     folder_id = None
-                    folders = await service.list_folders(session, callback.from_user.id, parent_id=None)
+                    folders = await service.list_folders(
+                        session, callback.from_user.id, parent_id=None
+                    )
                 else:
                     folder_name = folder.name
                     parent_id = folder.parent_id
@@ -381,18 +390,19 @@ async def store_incoming_file(message: Message, bot: Bot, state: FSMContext) -> 
             folder_id=folder_id,
         )
 
+        # Small files are pulled from Telegram into memory and persisted to the
+        # configured storage backend (local disk or S3 / R2). Large files keep
+        # only their Telegram file_id ("telegram" backend) so they can still be
+        # re-sent without ever touching durable storage.
         downloaded = False
         if 0 < size <= settings.file_max_download_bytes:
-            user_dir = os.path.join(settings.file_storage_path, str(message.from_user.id))
             try:
-                os.makedirs(user_dir, exist_ok=True)
-                dest = os.path.join(user_dir, f"{stored.id}_{_safe_name(file_name)}")
-                await bot.download(telegram_file_id, destination=dest)
-                stored.storage_path = dest
-                await session.flush()
-                downloaded = True
+                buffer = io.BytesIO()
+                await bot.download(telegram_file_id, destination=buffer)
+                downloaded = await service.store_blob(
+                    session, stored, buffer.getvalue()
+                )
             except Exception:
-                stored.storage_path = None
                 downloaded = False
 
         file_id = stored.id

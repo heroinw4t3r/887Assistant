@@ -10,14 +10,19 @@ user can only ever see or mutate their own files.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
+from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.models import FileFolder, StoredFile
+from app.storage import StorageError, get_storage_backend
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_disk_name(name: str) -> str:
@@ -25,6 +30,11 @@ def _safe_disk_name(name: str) -> str:
     base = re.sub(r"[^\w.\- ]", "_", base)
     base = base.strip().strip(".")
     return base or "file"
+
+
+def build_object_key(owner_id: int, file_name: str) -> str:
+    """Build a collision-free object key for a blob: ``<owner>/<uuid>_<safe_name>``."""
+    return f"{owner_id}/{uuid4().hex}_{_safe_disk_name(file_name)}"
 
 
 async def save_file(
@@ -37,6 +47,8 @@ async def save_file(
     telegram_file_id: str,
     kind: str,
     storage_path: str | None = None,
+    storage_backend: str = "telegram",
+    storage_key: str | None = None,
     folder_id: int | None = None,
 ) -> StoredFile:
     """Persist a new file record and return it (with its generated id)."""
@@ -54,11 +66,52 @@ async def save_file(
         telegram_file_id=telegram_file_id,
         kind=kind,
         storage_path=storage_path,
+        storage_backend=storage_backend,
+        storage_key=storage_key,
     )
     session.add(stored)
     await session.flush()
     await session.refresh(stored)
     return stored
+
+
+async def store_blob(
+    session: AsyncSession,
+    stored: StoredFile,
+    data: bytes,
+) -> bool:
+    """Upload ``data`` to the configured storage backend and record it on ``stored``.
+
+    Always keeps ``telegram_file_id`` intact (set elsewhere). On success the row's
+    ``storage_backend`` / ``storage_key`` reflect where the blob now lives. Returns
+    ``True`` if the upload succeeded, ``False`` if it failed (the row is left as a
+    Telegram-only reference so the file is never lost).
+    """
+    settings = get_settings()
+    backend = get_storage_backend(settings)
+    key = build_object_key(stored.owner_id, stored.file_name)
+    try:
+        await backend.save(key, data, content_type=stored.mime_type)
+    except StorageError:
+        logger.exception("storage backend failed to save blob for file %s", stored.id)
+        return False
+    stored.storage_backend = backend.name
+    stored.storage_key = key
+    await session.flush()
+    return True
+
+
+async def load_blob(stored: StoredFile) -> bytes | None:
+    """Load a file's bytes from its storage backend, or ``None`` if unavailable."""
+    if not stored.storage_key:
+        return None
+    settings = get_settings()
+    backend = get_storage_backend(settings)
+    try:
+        return await backend.load(stored.storage_key)
+    except StorageError:
+        logger.exception("storage backend failed to load blob for file %s", stored.id)
+        return None
 
 
 async def list_files(
@@ -186,6 +239,12 @@ async def delete_file(session: AsyncSession, owner_id: int, file_id: int) -> boo
     stored = await get_file(session, owner_id, file_id)
     if stored is None:
         return False
+    if stored.storage_key:
+        backend = get_storage_backend(get_settings())
+        try:
+            await backend.delete(stored.storage_key)
+        except StorageError:
+            logger.exception("storage backend failed to delete blob for file %s", stored.id)
     if stored.storage_path:
         try:
             os.remove(stored.storage_path)
