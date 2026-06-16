@@ -1,0 +1,33 @@
+# Railway Config-as-Code for 887Assistant
+# https://docs.railway.com/config-as-code/reference
+#
+# Secrets are NOT stored in this file. Set them in Railway → Service → Variables:
+#   TELEGRAM_BOT_TOKEN       — token from @BotFather
+#   WEB_PORT=${{PORT}}       — required: app listens on WEB_PORT, not PORT
+#   WEB_HOST=0.0.0.0
+#   BASE_URL=https://<your-domain>.up.railway.app
+#   DATABASE_URL=sqlite+aiosqlite:////app/data/887assistant.db
+#   FILE_STORAGE_PATH=/app/storage
+# Optional: LLM_*, FACEIT_*, LOG_LEVEL, DEFAULT_TIMEZONE — see .env.example
+#
+# Volumes (Settings → Volumes):
+#   /app/data    — SQLite database
+#   /app/storage — uploaded files
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = [
+  "app/**",
+  "requirements.txt",
+  "Dockerfile",
+  "railway.toml",
+]
+
+[deploy]
+startCommand = "python -m app.main"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+numReplicas = 1
