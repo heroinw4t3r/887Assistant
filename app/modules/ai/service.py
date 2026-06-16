@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,8 @@ from app.db.base import session_scope
 from app.db.models import AISession
 from app.modules.ai.providers import get_provider
 from app.modules.ai.web_search import format_results_for_prompt, search_web
+
+logger = logging.getLogger("ai.service")
 
 SYSTEM_PROMPT = (
     "Ты — дружелюбный и полезный ассистент в Telegram-боте. "
@@ -94,7 +97,11 @@ async def ask(owner_id: int, user_text: str, *, web_enabled: bool = False) -> tu
     used_web = False
 
     if settings.web_search_enabled and web_enabled:
-        results = await search_web(user_text, settings)
+        try:
+            results = await search_web(user_text, settings)
+        except Exception:  # noqa: BLE001 - search must never break the chat turn
+            logger.warning("Web search failed; answering without web context", exc_info=True)
+            results = []
         if results:
             used_web = True
             system_prompt = (

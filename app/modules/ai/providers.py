@@ -47,6 +47,23 @@ class OpenAICompatibleProvider:
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        # Lazily-created, reused across calls to avoid the cost of opening a new
+        # connection pool on every request.
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the underlying reused HTTP client, if any."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
 
     async def chat(self, messages: list[dict], *, system: str | None = None) -> str:
         if not self.api_key:
@@ -76,10 +93,10 @@ class OpenAICompatibleProvider:
         url = f"{self.base_url}/chat/completions"
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(url, json=body, headers=headers)
-                response.raise_for_status()
-                data = response.json()
+            client = self._get_client()
+            response = await client.post(url, json=body, headers=headers)
+            response.raise_for_status()
+            data = response.json()
         except httpx.TimeoutException as exc:
             raise AIError(
                 "Нейросеть слишком долго не отвечает. Попробуйте ещё раз чуть позже."

@@ -35,6 +35,12 @@ class FakeSettings:
     llm_base_url: str = ""
     llm_request_timeout: int = 60
     llm_max_history_messages: int = 20
+    # Web search: defaults chosen so NO real network call is ever attempted in
+    # tests (tavily provider with an empty key short-circuits to no results).
+    web_search_enabled: bool = False
+    web_search_provider: str = "tavily"
+    web_search_max_results: int = 5
+    tavily_api_key: str = ""
 
 
 # --------------------------------------------------------------------------- #
@@ -161,7 +167,11 @@ async def test_ask_full_turn_with_stub_provider(db_session, monkeypatch) -> None
 
 
 async def test_ask_with_web_search_context(db_session, monkeypatch) -> None:
-    monkeypatch.setattr(service, "get_settings", lambda: FakeSettings(llm_max_history_messages=20))
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: FakeSettings(llm_max_history_messages=20, web_search_enabled=True),
+    )
 
     captured: dict = {}
 
@@ -198,3 +208,39 @@ async def test_ask_with_web_search_context(db_session, monkeypatch) -> None:
     assert reply == "Сейчас +5°C."
     assert "Weather" in captured["system"]
     assert "https://example.com/weather" in captured["system"]
+
+
+async def test_ask_web_enabled_but_search_fails_still_replies(db_session, monkeypatch) -> None:
+    """A failing web search must never break the turn — answer offline instead."""
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: FakeSettings(llm_max_history_messages=20, web_search_enabled=True),
+    )
+
+    captured: dict = {}
+
+    class StubProvider:
+        name = "stub"
+        model = "stub-model"
+
+        async def chat(self, messages, *, system=None):
+            captured["system"] = system
+            return "Ответ без интернета."
+
+    async def boom(query, settings):
+        raise RuntimeError("search backend exploded")
+
+    monkeypatch.setattr(service, "get_provider", lambda settings: StubProvider())
+    monkeypatch.setattr(service, "search_web", boom)
+
+    @asynccontextmanager
+    async def fake_scope():
+        yield db_session
+
+    monkeypatch.setattr(service, "session_scope", fake_scope)
+
+    reply, used_web = await service.ask(1, "Какая погода?", web_enabled=True)
+    assert reply == "Ответ без интернета."
+    assert used_web is False
+    assert captured["system"] == service.SYSTEM_PROMPT_OFFLINE
